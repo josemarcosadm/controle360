@@ -249,13 +249,13 @@ sb.auth.onAuthStateChange((_e,session)=>{
 async function loadAll(){
   let all=[],from=0;const size=1000;
   while(true){
-    const {data,error}=await sb.from("lancamentos").select("*").order("data_evento",{ascending:true}).range(from,from+size-1);
+    const {data,error}=await sb.from("lancamentos").select("*").order("id",{ascending:true}).range(from,from+size-1);
     if(error)break;
     all=all.concat(data||[]);
     if(!data||data.length<size)break;
     from+=size; if(from>60000)break;
   }
-  db.lanc=all;
+  const seen={}; db.lanc=all.filter(x=>{ if(!x||x.id==null)return true; if(seen[x.id])return false; seen[x.id]=1; return true; });
   const {data:c}=await sb.from("contas").select("*");
   db.contas={};(c||[]).forEach(x=>db.contas[x.nome]=x.saldo);
   render();
