@@ -321,6 +321,7 @@ function render(){
   document.getElementById("venc-list").innerHTML=prev.length?prev.map(l=>lancHTML(l,true)).join(""):`<div class="vazio">Nenhuma conta prevista.</div>`;
   document.getElementById("contas-list").innerHTML=CONTAS.map(c=>`<div class="conta"><span class="nm">${c}</span><input type="number" step="0.01" value="${db.contas[c]??''}" placeholder="0,00" oninput="setConta('${c}',this.value)"></div>`).join("");
   recalcConc();
+  if(typeof updImpState==="function")updImpState();
 }
 function set(id,v){document.getElementById(id).textContent=v;}
 function recalcConc(){
@@ -410,6 +411,10 @@ function relPeriodo(opt){
   else { const yms=ms.filter(m=>m.slice(0,4)===opt); if(yms.length){ de.value=yms[0]; ate.value=yms[yms.length-1]; } }
   renderRel();
 }
+function updImpState(){
+  const imp=document.querySelector(".impbar"); if(imp) imp.style.display=(db.lanc&&db.lanc.length)?"none":"";
+  const ib=document.getElementById("imp-btn"); if(ib&&db.lanc&&db.lanc.length){ ib.textContent="✅ Histórico já importado"; ib.disabled=true; ib.style.opacity=".7"; ib.style.cursor="default"; }
+}
 function syncPeriodo(){
   const ate=document.getElementById("rel-ate"); if(!ate||!ate.options.length)return;
   const hm=mesKey(mesAtual);
@@ -421,6 +426,7 @@ function syncPeriodo(){
   if(rv&&rv.classList.contains("on"))renderRel();
 }
 function renderRel(){
+  updImpState();
   if(typeof Chart==="undefined"){ setTimeout(renderRel,400); return; }
   fillPeriod();
   let de=(document.getElementById("rel-de")||{}).value||"", ate=(document.getElementById("rel-ate")||{}).value||"";
