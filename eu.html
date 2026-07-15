@@ -78,6 +78,9 @@
   .rtab th{color:var(--muted);font-weight:600}.rtab td:first-child,.rtab th:first-child{text-align:left}
   .rtab .pos{color:var(--verde)}.rtab .neg{color:var(--vermelho)}
   .vazio{color:var(--muted);text-align:center;padding:20px;font-size:13px}
+  .perbtn{background:#eef2fa;color:var(--azul);border:1px solid var(--linha);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .perbtn:active{background:var(--azul);color:#fff}
+  .rtab{margin-top:8px}
   .impbar{background:#fff7e6;border:1px solid #ffe1a8;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px}
   .impbar button{margin-top:8px;background:var(--azul);color:#fff;border:none;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer}
 </style>
@@ -146,11 +149,26 @@ setTimeout(function(){
     <div class="secttl">Relatórios</div>
     <div id="imp-slot"></div>
     <div class="impbar">📥 <b>Primeira vez?</b> Vá na aba <b>Conciliar</b> e toque em <b>Importar meu histórico</b> para trazer os seus 2006 lançamentos. Faça isso uma única vez.</div>
-    <div class="rblock"><div class="rttl">Resultado por competência (mês a mês)</div><canvas id="ch-desemp"></canvas></div>
-    <div class="rblock"><div class="rttl">Saldo de caixa acumulado</div><canvas id="ch-fluxo"></canvas></div>
-    <div class="rblock"><div class="rttl">Despesas: previsto x pago</div><canvas id="ch-desp"></canvas></div>
-    <div class="rblock"><div class="rttl">Receitas: previsto x recebido</div><canvas id="ch-rec"></canvas></div>
-    <div class="rblock"><div class="rttl">A pagar x a receber (previsto, próximos meses)</div><canvas id="ch-prog"></canvas></div>
+    <div class="rblock" style="padding:12px 14px">
+      <div style="font-weight:700;font-size:13px;color:var(--azul);margin-bottom:8px">Período (você escolhe)</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="rel-de" onchange="renderRel()" style="flex:1;padding:8px;border-radius:10px;border:1px solid var(--linha);font-size:14px"></select>
+        <span style="color:var(--muted);font-size:13px">até</span>
+        <select id="rel-ate" onchange="renderRel()" style="flex:1;padding:8px;border-radius:10px;border:1px solid var(--linha);font-size:14px"></select>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="perbtn" onclick="relPeriodo('all')">Tudo</button>
+        <button class="perbtn" onclick="relPeriodo('2025')">2025</button>
+        <button class="perbtn" onclick="relPeriodo('2026')">2026</button>
+        <button class="perbtn" onclick="relPeriodo('2027')">2027</button>
+        <button class="perbtn" onclick="relPeriodo('12m')">Últimos 12m</button>
+      </div>
+    </div>
+    <div class="rblock"><div class="rttl">Resultado por competência (mês a mês)</div><canvas id="ch-desemp"></canvas><div id="tab-desemp"></div></div>
+    <div class="rblock"><div class="rttl">Fluxo de Caixa (por data de pagamento)</div><div id="fluxo-abert" class="hint" style="margin-bottom:8px"></div><canvas id="ch-fluxo"></canvas><div id="tab-fluxo"></div></div>
+    <div class="rblock"><div class="rttl">Despesas: previsto x pago</div><canvas id="ch-desp"></canvas><div id="tab-desp"></div></div>
+    <div class="rblock"><div class="rttl">Receitas: previsto x recebido</div><canvas id="ch-rec"></canvas><div id="tab-rec"></div></div>
+    <div class="rblock"><div class="rttl">A pagar x a receber (previsto, próximos meses)</div><canvas id="ch-prog"></canvas><div id="tab-prog"></div></div>
     <div class="rblock"><div class="rttl">Visão anual (competência)</div><div id="rel-anual"></div></div>
   </section>
 </main>
@@ -373,8 +391,31 @@ function mkChart(id,type,labels,datasets,stacked){
         y:{stacked:!!stacked,ticks:{font:{size:9},callback:v=>"R$ "+(v/1000).toFixed(0)+"k"}}}}});
 }
 const CAZUL="#2E5090",CVERDE="#1e8e4a",CVERM="#c0392b",CAMAR="#e6a700",CCINZA="#9aa4b2";
+function cell(v,pos){ const cls = v<0?"neg":(pos?"pos":""); return '<td class="'+cls+'">'+BRL(v)+'</td>'; }
+function relMonths(){ return [...new Set((db.lanc||[]).map(l=>l.comp||(l.data_evento||"").slice(0,7)).filter(Boolean))].sort(); }
+function fillPeriod(){
+  const de=document.getElementById("rel-de"),ate=document.getElementById("rel-ate"); if(!de||!ate)return;
+  const ms=relMonths(); if(!ms.length)return;
+  const opts=ms.map(m=>'<option value="'+m+'">'+mlab(m)+'</option>').join('');
+  const cd=de.value,ca=ate.value;
+  de.innerHTML=opts; ate.innerHTML=opts;
+  de.value=(cd&&ms.includes(cd))?cd:ms[0];
+  ate.value=(ca&&ms.includes(ca))?ca:ms[ms.length-1];
+}
+function relPeriodo(opt){
+  const de=document.getElementById("rel-de"),ate=document.getElementById("rel-ate"); if(!de||!ate)return;
+  const ms=[...de.options].map(o=>o.value); if(!ms.length)return;
+  if(opt==="all"){ de.value=ms[0]; ate.value=ms[ms.length-1]; }
+  else if(opt==="12m"){ ate.value=ms[ms.length-1]; de.value=ms[Math.max(0,ms.length-12)]; }
+  else { const yms=ms.filter(m=>m.slice(0,4)===opt); if(yms.length){ de.value=yms[0]; ate.value=yms[yms.length-1]; } }
+  renderRel();
+}
 function renderRel(){
   if(typeof Chart==="undefined"){ setTimeout(renderRel,400); return; }
+  fillPeriod();
+  let de=(document.getElementById("rel-de")||{}).value||"", ate=(document.getElementById("rel-ate")||{}).value||"";
+  if(de&&ate&&de>ate){ const t=de;de=ate;ate=t; }
+  const inYr=m=>(!de||m>=de)&&(!ate||m<=ate);
   const L=db.lanc||[];
   const compM=l=>l.comp||((l.data_evento||"").slice(0,7));
   const pagM=l=> l.data_pag ? l.data_pag.slice(0,7) : (l.comp||((l.data_evento||"").slice(0,7)));
@@ -383,33 +424,47 @@ function renderRel(){
   const isComp=l=>(l.regime||"ambos")!=="caixa";
   const abert=l=>l.categoria==="Saldo Remanescente";
   const val=l=>+l.valor||0;
+  const setTab=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;};
   if(!L.length){ ["ch-desemp","ch-fluxo","ch-desp","ch-rec","ch-prog"].forEach(id=>{if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];}});
     document.getElementById("rel-anual").innerHTML='<div class="vazio">Sem lançamentos ainda. Os relatórios aparecem quando você tiver dados.</div>'; return; }
-  // faixa de meses
+
   let comps=L.filter(isComp).map(compM).filter(Boolean);
   let pags=L.filter(l=>l.situacao==="Realizado").map(pagM).filter(Boolean);
-  let all=comps.concat(pags).sort();
-  const meses=monthsBetween(all[0],all[all.length-1]);
+  let allm=monthsBetween([...comps,...pags].sort()[0],[...comps,...pags].sort().slice(-1)[0]);
+  const meses=allm.filter(inYr);
   const labels=meses.map(mlab);
 
-  // 1) Desempenho (competência): resultado por mês
+  // ---------- 1) Desempenho (competência) ----------
   let rec={},des={};
-  L.forEach(l=>{ if(!isComp(l))return; if(abert(l))return; const m=compM(l); if(!m)return;
+  L.forEach(l=>{ if(!isComp(l)||abert(l))return; const m=compM(l); if(!m)return;
     if(l.tipo==="Entrada")rec[m]=(rec[m]||0)+val(l); else des[m]=(des[m]||0)+val(l); });
   const resultado=meses.map(m=>(rec[m]||0)-(des[m]||0));
-  mkChart("ch-desemp","bar",labels,[{label:"Resultado",data:resultado,
-    backgroundColor:resultado.map(v=>v>=0?CVERDE:CVERM)}]);
+  mkChart("ch-desemp","bar",labels,[{label:"Resultado",data:resultado,backgroundColor:resultado.map(v=>v>=0?CVERDE:CVERM)}]);
+  let ac1=0,t1='<div style="overflow-x:auto"><table class="rtab"><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Resultado</th><th>Acum.</th></tr>';
+  meses.forEach(m=>{const r=rec[m]||0,d=des[m]||0,res=r-d;ac1+=res;
+    t1+='<tr><td>'+mlab(m)+'</td>'+cell(r,1)+cell(d)+cell(res)+cell(ac1)+'</tr>';});
+  setTab("tab-desemp",t1+'</table></div>');
 
-  // 2) Fluxo de caixa: saldo acumulado
+  // ---------- 2) Fluxo de Caixa ----------
   const abertura=L.filter(l=>l.situacao==="Realizado"&&abert(l)&&l.tipo==="Entrada").reduce((s,l)=>s+val(l),0);
   let ent={},sai={};
   L.forEach(l=>{ if(l.situacao!=="Realizado"||!isCx(l)||abert(l))return; const m=pagM(l); if(!m)return;
     if(l.tipo==="Entrada")ent[m]=(ent[m]||0)+val(l); else sai[m]=(sai[m]||0)+val(l); });
-  let ac=abertura; const saldo=meses.map(m=>{ ac+=(ent[m]||0)-(sai[m]||0); return Math.round(ac*100)/100; });
-  mkChart("ch-fluxo","line",labels,[{label:"Saldo acumulado",data:saldo,borderColor:CAZUL,
+  // saldo acumulado completo (todos os meses), depois recorta o período
+  let acFull={},run=abertura;
+  allm.forEach(m=>{ run+=(ent[m]||0)-(sai[m]||0); acFull[m]=Math.round(run*100)/100; });
+  const idx0=allm.indexOf(meses[0]);
+  const saldoIni = idx0>0 ? acFull[allm[idx0-1]] : abertura;
+  mkChart("ch-fluxo","line",labels,[{label:"Saldo acumulado",data:meses.map(m=>acFull[m]),borderColor:CAZUL,
     backgroundColor:"rgba(46,80,144,.12)",fill:true,tension:.25,pointRadius:2,borderWidth:2}]);
+  const abLbl = idx0>0 ? ("Saldo inicial do período ("+mlab(meses[0])+"): ") : "Abertura (jan/2025): ";
+  document.getElementById("fluxo-abert").innerHTML="<b>"+abLbl+"</b>"+BRL(idx0>0?saldoIni:abertura);
+  let t2='<div style="overflow-x:auto"><table class="rtab"><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Result.</th><th>Saldo</th></tr>';
+  meses.forEach(m=>{const e=ent[m]||0,s=sai[m]||0;
+    t2+='<tr><td>'+mlab(m)+'</td>'+cell(e,1)+cell(s)+cell(e-s)+cell(acFull[m])+'</tr>';});
+  setTab("tab-fluxo",t2+'</table></div>');
 
-  // 3) Despesas: previsto x pago
+  // ---------- 3) Despesas: previsto x pago ----------
   let apPrev={},pgReal={};
   L.forEach(l=>{ if(!isCx(l)||l.tipo!=="Saída")return;
     if(l.situacao==="Previsto"){const m=vencM(l);if(m)apPrev[m]=(apPrev[m]||0)+val(l);}
@@ -417,8 +472,11 @@ function renderRel(){
   mkChart("ch-desp","bar",labels,[
     {label:"A pagar (prev)",data:meses.map(m=>apPrev[m]||0),backgroundColor:CAMAR},
     {label:"Pago (real)",data:meses.map(m=>pgReal[m]||0),backgroundColor:CVERM}]);
+  let t3='<div style="overflow-x:auto"><table class="rtab"><tr><th>Mês</th><th>A pagar (prev)</th><th>Pago (real)</th></tr>';
+  meses.forEach(m=>{ if(!(apPrev[m]||pgReal[m]))return; t3+='<tr><td>'+mlab(m)+'</td>'+cell(apPrev[m]||0)+cell(pgReal[m]||0)+'</tr>';});
+  setTab("tab-desp",t3+'</table></div>');
 
-  // 4) Receitas: previsto x recebido
+  // ---------- 4) Receitas: previsto x recebido ----------
   let arPrev={},rcReal={};
   L.forEach(l=>{ if(!isCx(l)||l.tipo!=="Entrada"||abert(l))return;
     if(l.situacao==="Previsto"){const m=vencM(l);if(m)arPrev[m]=(arPrev[m]||0)+val(l);}
@@ -426,28 +484,32 @@ function renderRel(){
   mkChart("ch-rec","bar",labels,[
     {label:"A receber (prev)",data:meses.map(m=>arPrev[m]||0),backgroundColor:CCINZA},
     {label:"Recebido (real)",data:meses.map(m=>rcReal[m]||0),backgroundColor:CVERDE}]);
+  let t4='<div style="overflow-x:auto"><table class="rtab"><tr><th>Mês</th><th>A receber (prev)</th><th>Recebido (real)</th></tr>';
+  meses.forEach(m=>{ if(!(arPrev[m]||rcReal[m]))return; t4+='<tr><td>'+mlab(m)+'</td>'+cell(arPrev[m]||0,1)+cell(rcReal[m]||0,1)+'</tr>';});
+  setTab("tab-rec",t4+'</table></div>');
 
-  // 5) Programação: a pagar x a receber (previsto) por vencimento, meses à frente
+  // ---------- 5) Programação (próximos meses) ----------
   const hoje=new Date(); const mkAtual=hoje.getFullYear()+"-"+String(hoje.getMonth()+1).padStart(2,"0");
   let pPag={},pRec={};
-  L.forEach(l=>{ if(l.situacao!=="Previsto"||!isCx(l))return; const m=vencM(l); if(!m||m<mkAtual)return;
+  L.forEach(l=>{ if(l.situacao!=="Previsto"||!isCx(l))return; const m=vencM(l); if(!m||m<mkAtual||!inYr(m))return;
     if(l.tipo==="Saída")pPag[m]=(pPag[m]||0)+val(l); else pRec[m]=(pRec[m]||0)+val(l); });
-  let fut=Object.keys(pPag).concat(Object.keys(pRec)).filter((v,i,a)=>a.indexOf(v)===i).sort();
-  const flab=fut.map(mlab);
-  mkChart("ch-prog","bar",flab,[
+  let fut=[...new Set([...Object.keys(pPag),...Object.keys(pRec)])].sort();
+  mkChart("ch-prog","bar",fut.map(mlab),[
     {label:"A pagar",data:fut.map(m=>pPag[m]||0),backgroundColor:CVERM},
     {label:"A receber",data:fut.map(m=>pRec[m]||0),backgroundColor:CVERDE}]);
+  let t5='<div style="overflow-x:auto"><table class="rtab"><tr><th>Mês venc.</th><th>A pagar</th><th>A receber</th><th>Saldo</th></tr>';
+  fut.forEach(m=>{const p=pPag[m]||0,r=pRec[m]||0;t5+='<tr><td>'+mlab(m)+'</td>'+cell(p)+cell(r,1)+cell(r-p)+'</tr>';});
+  setTab("tab-prog",fut.length?t5+'</table></div>':'<div class="vazio">Sem previstos futuros neste período.</div>');
 
-  // 6) Visão anual (competência)
+  // ---------- 6) Visão anual ----------
   let ay={};
   L.forEach(l=>{ if(!isComp(l)||abert(l))return; const m=compM(l); if(!m)return; const y=m.slice(0,4);
     ay[y]=ay[y]||{r:0,d:0}; if(l.tipo==="Entrada")ay[y].r+=val(l); else ay[y].d+=val(l); });
   const yrs=Object.keys(ay).sort();
   let html='<table class="rtab"><tr><th>Ano</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr>';
   yrs.forEach(y=>{const r=ay[y].r,d=ay[y].d,res=r-d;
-    html+='<tr><td><b>'+y+'</b></td><td class="pos">'+BRL(r)+'</td><td class="neg">'+BRL(d)+'</td><td class="'+(res>=0?"pos":"neg")+'"><b>'+BRL(res)+'</b></td></tr>';});
-  html+='</table>';
-  document.getElementById("rel-anual").innerHTML=html;
+    html+='<tr><td><b>'+y+'</b></td>'+cell(r,1)+cell(d)+'<td class="'+(res>=0?"pos":"neg")+'"><b>'+BRL(res)+'</b></td></tr>';});
+  document.getElementById("rel-anual").innerHTML=html+'</table>';
 }
 
 const HIST_SALDOS={"Banco do Brasil — Conta Corrente": 1865.0, "Banco do Brasil — Conta Salário": 673.44, "Bradesco — Conta Salário": 8017.82, "Mercado Pago — Conta Corrente": 0.27, "LeCard — Voucher": 228.96, "Dinheiro / Carteira": 34.9};
