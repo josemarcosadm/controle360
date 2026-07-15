@@ -247,8 +247,15 @@ sb.auth.onAuthStateChange((_e,session)=>{
 
 // ---------- DADOS (nuvem) ----------
 async function loadAll(){
-  const {data:l,error:e1}=await sb.from("lancamentos").select("*").order("data_evento",{ascending:true});
-  if(!e1) db.lanc=l||[];
+  let all=[],from=0;const size=1000;
+  while(true){
+    const {data,error}=await sb.from("lancamentos").select("*").order("data_evento",{ascending:true}).range(from,from+size-1);
+    if(error)break;
+    all=all.concat(data||[]);
+    if(!data||data.length<size)break;
+    from+=size; if(from>60000)break;
+  }
+  db.lanc=all;
   const {data:c}=await sb.from("contas").select("*");
   db.contas={};(c||[]).forEach(x=>db.contas[x.nome]=x.saldo);
   render();
