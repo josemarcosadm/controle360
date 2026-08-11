@@ -411,7 +411,7 @@ function abreForm(id){
   var _fpg=document.getElementById("f-pago-val"); if(_fpg)_fpg.value="";
   var _fp=document.getElementById("f-parc"); if(_fp)_fp.value=1;
   var _rp=document.getElementById("row-parc"); if(_rp)_rp.style.display=editId?"none":"";
-  var _dl=document.getElementById("desc-list"); if(_dl)_dl.innerHTML=[...new Set((db.lanc||[]).map(function(l){return (l.descricao||"").replace(/\s*\(parc[^)]*\)\s*$/i,"").replace(/\s*\(compra[^)]*\)\s*$/i,"").trim();}).filter(Boolean))].map(function(d){return "<option value=\""+d.replace(/"/g,"&quot;")+"\"></option>";}).join("");
+  var _dl=document.getElementById("desc-list"); if(_dl)_dl.innerHTML=[...new Set((db.lanc||[]).map(function(l){return (l.descricao||"").replace(/\s*\(parc[^)]*\)\s*$/i,"").replace(/\s*\(compra[^)]*\)\s*$/i,"").replace(/\s*\(desconto[^)]*\)\s*$/i,"").trim();}).filter(Boolean))].map(function(d){return "<option value=\""+d.replace(/"/g,"&quot;")+"\"></option>";}).join("");
   document.getElementById("modal").classList.add("on");}
 function fechaForm(){document.getElementById("modal").classList.remove("on");}
 
@@ -634,7 +634,7 @@ async function baixaSaldoFuturo(){
   toast("salvando…");
   let r; if(d.editId) r=await sb.from("lancamentos").update(d.row).eq("id",d.editId); else {d.row.user_id=USER.id; r=await sb.from("lancamentos").insert(d.row);}
   if(r.error){alert("Erro: "+r.error.message);return;}
-  const saldo=Object.assign({},d.row,{valor:d.diff,situacao:"Previsto",data_pag:null,venc:vf,comp:(vf||"").slice(0,7)||d.row.comp,desconto:0,descricao:(d.row.descricao||"").replace(/\s*\(saldo\)\s*$/,"")+" (saldo)",user_id:USER.id});
+  const saldo=Object.assign({},d.row,{valor:d.diff,situacao:"Previsto",data_pag:null,venc:vf,comp:(vf||"").slice(0,7)||d.row.comp,descricao:(d.row.descricao||"").replace(/\s*\(saldo\)\s*$/,"")+" (saldo)",user_id:USER.id});
   delete saldo.id;
   const r2=await sb.from("lancamentos").insert(saldo);
   if(r2.error){alert("Erro ao criar saldo: "+r2.error.message);return;}
@@ -643,7 +643,7 @@ async function baixaSaldoFuturo(){
 }
 async function baixaDesconto(){
   const d=pendingBaixa; if(!d)return; toast("salvando…");
-  const row=Object.assign({},d.row,{desconto:d.diff});
+  const row=Object.assign({},d.row,{descricao:(d.row.descricao||"")+" (desconto "+BRL(d.diff)+")"});
   let r; if(d.editId) r=await sb.from("lancamentos").update(row).eq("id",d.editId); else {row.user_id=USER.id; r=await sb.from("lancamentos").insert(row);}
   if(r.error){alert("Erro: "+r.error.message);return;}
   pendingBaixa=null; document.getElementById("pmodal").classList.remove("on"); fechaForm(); await loadAll();
@@ -696,13 +696,14 @@ function renderRelExtras(L,inYr,compM,isComp,abert,val){
   setT("tab-top-desp", t5tab(td,false)); setT("tab-top-rec", t5tab(tr,true));
   // Descontos e eliminações (no período, por data de pagamento/competência)
   let drows=[], totS=0, totE=0;
-  L.forEach(l=>{ const dv=+l.desconto||0; if(dv<=0)return; const m=(l.data_pag||l.comp||(l.data_evento||"")).slice(0,7); if(!inYr(m))return;
+  const _parseDesc=(s)=>{const mm=(s||"").match(/\(desconto R\$\s*([\d.,]+)\)/i);return mm?(parseFloat(mm[1].replace(/\./g,"").replace(",","."))||0):0;};
+  L.forEach(l=>{ const dv=_parseDesc(l.descricao); if(dv<=0)return; const m=(l.data_pag||l.comp||(l.data_evento||"")).slice(0,7); if(!inYr(m))return;
     drows.push(l); if(l.tipo==="Saída")totS+=dv; else totE+=dv; });
   if(!drows.length){ setT("tab-descontos",'<div class="vazio">Nenhum desconto/eliminação no período. (Quando você der baixa parcial com desconto, aparece aqui.)</div>'); return; }
   drows.sort((a,b)=>String(b.data_pag||b.data_evento||"").localeCompare(String(a.data_pag||a.data_evento||"")));
   let s='<div style="overflow-x:auto"><table class="rtab"><tr><th>Descrição</th><th>Tipo</th><th>Original</th><th>Realizado</th><th>Desconto</th><th>Data</th></tr>';
-  drows.slice(0,200).forEach(l=>{ const dv=+l.desconto||0; const orig=(+l.valor||0)+dv;
-    s+='<tr><td>'+esc(l.descricao||"")+'</td><td>'+(l.tipo==="Entrada"?"Receita":"Despesa")+'</td><td>'+BRL(orig)+'</td><td>'+BRL(+l.valor||0)+'</td><td class="neg">'+BRL(dv)+'</td><td>'+fmt(l.data_pag||l.data_evento)+'</td></tr>'; });
+  drows.slice(0,200).forEach(l=>{ const dv=_parseDesc(l.descricao); const orig=(+l.valor||0)+dv; const _cd=(l.descricao||"").replace(/\s*\(desconto R\$\s*[\d.,]+\)/i,"");
+    s+='<tr><td>'+esc(_cd)+'</td><td>'+(l.tipo==="Entrada"?"Receita":"Despesa")+'</td><td>'+BRL(orig)+'</td><td>'+BRL(+l.valor||0)+'</td><td class="neg">'+BRL(dv)+'</td><td>'+fmt(l.data_pag||l.data_evento)+'</td></tr>'; });
   s+='</table></div><div class="hint" style="margin-top:8px">Desconto obtido em despesas: <b>'+BRL(totS)+'</b> · Não recebido em receitas: <b>'+BRL(totE)+'</b></div>';
   setT("tab-descontos", s);
 }
