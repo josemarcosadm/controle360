@@ -240,6 +240,8 @@ setTimeout(function(){
 </div></div>
 <div class="modal" id="modal"><div class="sheet">
   <h2 id="f-ttl">Novo lançamento</h2>
+  <button id="btn-voz" onclick="falarLancamento()" style="width:100%;margin:2px 0 4px;padding:12px;border:none;border-radius:12px;background:#2E5090;color:#fff;font-size:15px;font-weight:700;cursor:pointer">🎤 Falar o lançamento</button>
+  <div class="hint" style="margin:0 0 8px">Ex.: "paguei 35 reais no mercado ontem" ou "recebi 1500 de salário dia 5".</div>
   <div class="segs" id="f-sit"><button data-s="Realizado" class="on" onclick="segSit('Realizado')">Realizado</button><button data-s="Previsto" onclick="segSit('Previsto')">Previsto</button></div>
   <div class="segs" id="f-tipo" style="margin-top:8px"><button data-t="Saída" class="on" onclick="segTipo('Saída')">Despesa</button><button data-t="Entrada" onclick="segTipo('Entrada')">Receita</button></div>
   <label>Descrição</label><input id="f-desc" list="desc-list" autocomplete="off" placeholder="Ex.: Mercado, Salário, Conta de luz…"><datalist id="desc-list"></datalist>
@@ -337,6 +339,82 @@ async function loadAll(){
   const {data:c}=await sb.from("contas").select("*");
   db.contas={};(c||[]).forEach(x=>db.contas[x.nome]=x.saldo);
   render();
+}
+// ---------- LANÇAMENTO POR VOZ ----------
+var _rec=null;
+function _mesesNome(){return {"janeiro":1,"fevereiro":2,"março":3,"marco":3,"abril":4,"maio":5,"junho":6,"julho":7,"agosto":8,"setembro":9,"outubro":10,"novembro":11,"dezembro":12};}
+function _isoD(dt){return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");}
+function parseDataFala(t,hoje){
+  t=" "+t.toLowerCase()+" "; var d=new Date(hoje.getTime());
+  if(/\santeontem\s/.test(t)){d.setDate(d.getDate()-2);return {iso:_isoD(d),raw:"anteontem"};}
+  if(/\sontem\s/.test(t)){d.setDate(d.getDate()-1);return {iso:_isoD(d),raw:"ontem"};}
+  if(/\shoje\s/.test(t)){return {iso:_isoD(d),raw:"hoje"};}
+  var m=t.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+  if(m){var yy=m[3]?(+m[3]<100?2000+ +m[3]:+m[3]):hoje.getFullYear();return {iso:_isoD(new Date(yy,(+m[2])-1,+m[1])),raw:m[0]};}
+  var meses=_mesesNome();
+  m=t.match(/(\d{1,2})\s+de\s+([a-zà-ÿ]+)/);
+  if(m&&meses[m[2]]){return {iso:_isoD(new Date(hoje.getFullYear(),meses[m[2]]-1,+m[1])),raw:m[0]};}
+  m=t.match(/dia\s+(\d{1,2})/);
+  if(m){return {iso:_isoD(new Date(hoje.getFullYear(),hoje.getMonth(),+m[1])),raw:m[0]};}
+  return null;
+}
+function parseValorFala(t){
+  var m=t.match(/(\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+,\d{1,2}|\d{1,3}(?:\.\d{3})+|\d+)/);
+  if(!m)return null; var s=m[0];
+  if(s.indexOf(",")>=0){s=s.replace(/\./g,"").replace(",",".");}
+  else if(/\.\d{3}/.test(s)){s=s.replace(/\./g,"");}
+  var v=parseFloat(s); return isNaN(v)?null:{valor:Math.round(v*100)/100,raw:m[0]};
+}
+function parseTipoFala(t){
+  t=t.toLowerCase();
+  if(/\b(recebi|receita|entrada|ganhei|vendi|venda|dep[óo]sito|sal[áa]rio|caiu|recebimento|entrou)\b/.test(t))return "Entrada";
+  return "Saída";
+}
+function matchCategoriaFala(t,tipo){
+  var lista=(tipo==="Entrada"?CATS_REC:CATS_DES); var tl=t.toLowerCase();
+  for(var i=0;i<lista.length;i++){if(lista[i]&&tl.indexOf(lista[i].toLowerCase())>=0)return lista[i];}
+  return null;
+}
+function limpaDescFala(t,valorRaw,dataRaw){
+  var s=t; if(dataRaw)s=s.replace(dataRaw,""); if(valorRaw)s=s.replace(valorRaw,"");
+  s=s.replace(/r\$|\breais\b|\breal\b/gi,"");
+  s=s.replace(/^\s*(eu\s+)?(paguei|pagar|gastei|gastar|comprei|comprar|recebi|receber|ganhei|vendi|vender|lancei|lan[çc]ar|anota[r]?|adiciona[r]?|registra[r]?)\s+/i,"");
+  s=s.replace(/\b(vence|vencimento|previsto|vai\s+vencer|agendar|agendado|marcar|lembrar|a\s+pagar|a\s+receber)\b/gi,"");
+  s=s.replace(/^\s*(com|de|do|da|no|na|em|para|pro|pra|a|o|um|uma)\s+/i,"");
+  s=s.replace(/\s{2,}/g," ").trim();
+  if(s)s=s.charAt(0).toUpperCase()+s.slice(1);
+  return s;
+}
+function aplicarFala(txt){
+  if(!txt){toast("Não entendi, tente de novo.");return;}
+  var hoje=new Date();
+  var dinfo=parseDataFala(txt,hoje);
+  var txt2=txt; if(dinfo&&dinfo.raw)txt2=txt.toLowerCase().replace(dinfo.raw.toLowerCase(),"");
+  var vinfo=parseValorFala(txt2);
+  var tipo=parseTipoFala(txt);
+  var ehPrevisto=/\b(vence|vencimento|previsto|agendar|agendado|vai vencer|marcar|lembrar|a pagar|a receber)\b/i.test(txt);
+  fSit=ehPrevisto?"Previsto":"Realizado"; segSit(fSit); segTipo(tipo);
+  if(vinfo){var fv=document.getElementById("f-valor");if(fv)fv.value=vinfo.valor;}
+  if(dinfo){
+    if(ehPrevisto){var fvenc=document.getElementById("f-venc");if(fvenc)fvenc.value=dinfo.iso;}
+    else{var fd=document.getElementById("f-data");if(fd)fd.value=dinfo.iso;var fp=document.getElementById("f-pag");if(fp)fp.value=dinfo.iso;if(typeof calcVenc==="function")calcVenc();}
+  }
+  var desc=limpaDescFala(txt,vinfo?vinfo.raw:null,dinfo?dinfo.raw:null);
+  if(desc){var fdesc=document.getElementById("f-desc");if(fdesc)fdesc.value=desc;}
+  var cat=matchCategoriaFala(txt,tipo); if(cat){try{document.getElementById("f-cat").value=cat;}catch(e){}}
+  toast("Entendi: "+txt);
+}
+function falarLancamento(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var btn=document.getElementById("btn-voz");
+  if(!SR){alert("Seu navegador não suporta ditado por voz. Tente no Safari (iPhone/Mac) ou Chrome atualizados — ou digite normalmente.");return;}
+  try{_rec=new SR();}catch(e){alert("Não foi possível iniciar o microfone.");return;}
+  _rec.lang="pt-BR";_rec.interimResults=false;_rec.maxAlternatives=1;_rec.continuous=false;
+  if(btn){btn.textContent="🔴 Ouvindo… fale agora";btn.disabled=true;}
+  _rec.onresult=function(ev){var txt=(ev.results&&ev.results[0]&&ev.results[0][0]&&ev.results[0][0].transcript)||"";aplicarFala(txt);};
+  _rec.onerror=function(ev){if(btn){btn.textContent="🎤 Falar o lançamento";btn.disabled=false;}var e=ev&&ev.error;var msg=(e==="not-allowed"||e==="service-not-allowed")?"Permissão do microfone negada — libere nas configurações do navegador.":"Não consegui ouvir ("+e+"). Tente de novo.";toast(msg);};
+  _rec.onend=function(){if(btn){btn.textContent="🎤 Falar o lançamento";btn.disabled=false;}};
+  try{_rec.start();}catch(e){if(btn){btn.textContent="🎤 Falar o lançamento";btn.disabled=false;}}
 }
 async function salvar(){
   const valor=parseFloat(document.getElementById("f-valor").value||"0");
