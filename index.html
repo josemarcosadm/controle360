@@ -375,6 +375,36 @@ function matchCategoriaFala(t,tipo){
   for(var i=0;i<lista.length;i++){if(lista[i]&&tl.indexOf(lista[i].toLowerCase())>=0)return lista[i];}
   return null;
 }
+function inferCategoria(txt,desc,tipo){
+  var tl=(txt||"").toLowerCase(), i, j;
+  var lista=(tipo==="Entrada"?CATS_REC:CATS_DES);
+  for(i=0;i<lista.length;i++){if(lista[i]&&tl.indexOf(lista[i].toLowerCase())>=0)return lista[i];}
+  var dl=(desc||"").toLowerCase();
+  if(dl){
+    var src=(typeof db!=="undefined"&&db&&db.lanc)?db.lanc:[];
+    var prev=src.filter(function(l){return l.tipo===tipo&&l.categoria&&_nomeBase(l.descricao||"").toLowerCase()===dl;})
+               .sort(function(a,b){return String(b.data_evento||"").localeCompare(String(a.data_evento||""));})[0];
+    if(prev)return prev.categoria;
+  }
+  if(tipo==="Saída"){
+    var MAP=[
+      [["mercado","supermercado","feira","padaria","restaurante","lanche","ifood","açougue","hortifruti","mercearia"],"Alimentação"],
+      [["uber","táxi","taxi","gasolina","combustível","ônibus","onibus","estacionamento","passagem","pedágio","pedagio"],"Transporte"],
+      [["farmácia","farmacia","remédio","remedio","médico","medico","dentista","exame","consulta","hospital","laboratório"],"Saúde"],
+      [["luz","energia","cemig","enel","celesc"],"Energia"],
+      [["água","agua","saneamento"],"Água"],
+      [["internet","wifi","wi-fi","telefone","celular","vivo","claro"],"Internet"],
+      [["escola","faculdade","curso","mensalidade","livro","material escolar"],"Educação"],
+      [["cinema","netflix","spotify","streaming","viagem","passeio","ingresso"],"Lazer"],
+      [["roupa","sapato","calçado","calcado","tênis","tenis"],"Vestuário"],
+      [["notebook","computador","mouse","teclado","informática","informatica","software","impressora"],"Informática"],
+      [["academia","esporte","ginástica","ginastica"],"Esporte"],
+      [["condomínio","condominio"],"Condomínio"]
+    ];
+    for(i=0;i<MAP.length;i++){var arr=MAP[i][0];for(j=0;j<arr.length;j++){if(tl.indexOf(arr[j])>=0)return MAP[i][1];}}
+  }
+  return null;
+}
 function limpaDescFala(t,valorRaw,dataRaw){
   var s=t; if(dataRaw)s=s.replace(dataRaw,""); if(valorRaw)s=s.replace(valorRaw,"");
   s=s.replace(/r\$|\breais\b|\breal\b/gi,"");
@@ -401,7 +431,7 @@ function aplicarFala(txt){
   }
   var desc=limpaDescFala(txt,vinfo?vinfo.raw:null,dinfo?dinfo.raw:null);
   if(desc){var fdesc=document.getElementById("f-desc");if(fdesc)fdesc.value=desc;}
-  var cat=matchCategoriaFala(txt,tipo); if(cat){try{document.getElementById("f-cat").value=cat;}catch(e){}}
+  var cat=inferCategoria(txt,desc,tipo); if(cat){try{document.getElementById("f-cat").value=cat;}catch(e){}}
   toast("Entendi: "+txt);
 }
 function falarLancamento(){
