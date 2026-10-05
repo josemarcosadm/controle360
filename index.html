@@ -241,7 +241,7 @@ setTimeout(function(){
 <div class="modal" id="modal"><div class="sheet">
   <h2 id="f-ttl">Novo lançamento</h2>
   <button id="btn-voz" onclick="falarLancamento()" style="width:100%;margin:2px 0 4px;padding:12px;border:none;border-radius:12px;background:#2E5090;color:#fff;font-size:15px;font-weight:700;cursor:pointer">🎤 Falar o lançamento</button>
-  <div class="hint" style="margin:0 0 8px">Ex.: "paguei 35 reais no mercado ontem" ou "recebi 1500 de salário dia 5".</div>
+  <div class="hint" style="margin:0 0 8px">Toque, e fale pelo 🎤 do teclado do celular (ou digite). Ex.: "paguei 35 no mercado ontem".</div>
   <div class="segs" id="f-sit"><button data-s="Realizado" class="on" onclick="segSit('Realizado')">Realizado</button><button data-s="Previsto" onclick="segSit('Previsto')">Previsto</button></div>
   <div class="segs" id="f-tipo" style="margin-top:8px"><button data-t="Saída" class="on" onclick="segTipo('Saída')">Despesa</button><button data-t="Entrada" onclick="segTipo('Entrada')">Receita</button></div>
   <label>Descrição</label><input id="f-desc" list="desc-list" autocomplete="off" placeholder="Ex.: Mercado, Salário, Conta de luz…"><datalist id="desc-list"></datalist>
@@ -405,16 +405,11 @@ function aplicarFala(txt){
   toast("Entendi: "+txt);
 }
 function falarLancamento(){
-  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  var btn=document.getElementById("btn-voz");
-  if(!SR){alert("Seu navegador não suporta ditado por voz. Tente no Safari (iPhone/Mac) ou Chrome atualizados — ou digite normalmente.");return;}
-  try{_rec=new SR();}catch(e){alert("Não foi possível iniciar o microfone.");return;}
-  _rec.lang="pt-BR";_rec.interimResults=false;_rec.maxAlternatives=1;_rec.continuous=false;
-  if(btn){btn.textContent="🔴 Ouvindo… fale agora";btn.disabled=true;}
-  _rec.onresult=function(ev){var txt=(ev.results&&ev.results[0]&&ev.results[0][0]&&ev.results[0][0].transcript)||"";aplicarFala(txt);};
-  _rec.onerror=function(ev){if(btn){btn.textContent="🎤 Falar o lançamento";btn.disabled=false;}var e=ev&&ev.error;var msg=(e==="not-allowed"||e==="service-not-allowed")?"Permissão do microfone negada — libere nas configurações do navegador.":"Não consegui ouvir ("+e+"). Tente de novo.";toast(msg);};
-  _rec.onend=function(){if(btn){btn.textContent="🎤 Falar o lançamento";btn.disabled=false;}};
-  try{_rec.start();}catch(e){if(btn){btn.textContent="🎤 Falar o lançamento";btn.disabled=false;}}
+  var txt=prompt("Diga ou digite o lançamento:\n(ex.: paguei 35 no mercado ontem)\n\nDica: toque no 🎤 do teclado para falar e depois em OK.");
+  if(txt===null)return;
+  txt=(""+txt).trim();
+  if(!txt){toast("Nada informado.");return;}
+  aplicarFala(txt);
 }
 async function salvar(){
   const valor=parseFloat(document.getElementById("f-valor").value||"0");
