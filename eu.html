@@ -208,6 +208,13 @@ setTimeout(function(){
     <div class="rblock"><div class="rttl">A pagar x a receber (previsto, próximos meses)</div><canvas id="ch-prog"></canvas><div id="tab-prog"></div></div>
     <div class="rblock"><div class="rttl">Top 5 maiores despesas por categoria</div><canvas id="ch-top-desp"></canvas><div id="tab-top-desp"></div></div>
     <div class="rblock"><div class="rttl">Top 5 maiores receitas por categoria</div><canvas id="ch-top-rec"></canvas><div id="tab-top-rec"></div></div>
+    <div class="rblock"><div class="rttl">💼 Totais por fornecedor / cliente (no período)</div>
+      <input id="forn-q" oninput="fornFiltra()" placeholder="Filtrar por nome…" style="width:100%;padding:9px;border:1px solid var(--linha);border-radius:10px;font-size:14px;margin-bottom:10px;background:var(--card);color:var(--tx)">
+      <div style="font-weight:700;font-size:12px;color:var(--vermelho);margin-bottom:4px">Fornecedores (despesas)</div>
+      <div id="tab-forn-desp"></div>
+      <div style="font-weight:700;font-size:12px;color:var(--verde);margin:12px 0 4px">Clientes (receitas)</div>
+      <div id="tab-forn-rec"></div>
+    </div>
     <div class="rblock"><div class="rttl">Descontos e eliminações (diferenças não pagas / não recebidas)</div><div id="tab-descontos"></div></div>
     <div class="rblock"><div class="rttl">Visão anual (competência)</div><div id="rel-anual"></div></div>
   </section>
@@ -240,7 +247,7 @@ setTimeout(function(){
   <div class="row2"><div><label>Data do evento</label><input id="f-data" type="date"></div><div><label>Forma</label><select id="f-forma" onchange="calcVenc()"></select></div></div>
   <div class="row2"><div><label>Vencimento (auto, editável)</label><input id="f-venc" type="date"></div><div><label>Data de pagamento</label><input id="f-pag" type="date"></div></div>
   <div class="row2" id="row-pago"><div><label>Valor pago/recebido (R$)</label><input id="f-pago-val" type="number" inputmode="decimal" step="0.01" placeholder="igual ao valor"></div><div style="display:flex;align-items:flex-end"><div class="hint" style="margin:0 0 10px">Se for MENOR que o valor, o app pergunta o que fazer com a diferença (saldo futuro ou desconto).</div></div></div>
-  <div class="row2" id="row-parc"><div><label>Parcelas (nº)</label><input id="f-parc" type="number" inputmode="numeric" min="1" step="1" value="1"></div><div style="display:flex;align-items:flex-end"><div class="hint" style="margin:0 0 10px">Se for maior que 1, o Valor acima é o TOTAL e será dividido em parcelas mensais automaticamente.</div></div></div>
+  <div class="row2" id="row-parc"><div><label>Parcelas (nº)</label><input id="f-parc" type="number" inputmode="numeric" min="1" step="1" value="1" oninput="parcChg()"></div><div style="display:flex;align-items:flex-end"><div class="hint" style="margin:0 0 10px">Se for maior que 1, o Valor acima é o TOTAL e será dividido em parcelas mensais automaticamente.</div></div></div>
   <div class="acts"><button class="btn del" id="f-del" onclick="excluir()" style="display:none">🗑</button><button class="btn gho" onclick="fechaForm()">Cancelar</button><button class="btn prim" onclick="salvar()">Salvar</button></div>
 </div></div>
 
@@ -338,7 +345,8 @@ async function salvar(){
     categoria:document.getElementById("f-cat").value,forma:document.getElementById("f-forma").value,
     data_evento:document.getElementById("f-data").value||null,venc:document.getElementById("f-venc").value||null,
     data_pag:fSit==="Realizado"?(document.getElementById("f-pag").value||null):null,comp:(document.getElementById("f-data").value||"").slice(0,7)||null,regime:"ambos"};
-  if(fSit==="Realizado"){
+  const nParc=editId?1:Math.max(1,parseInt(document.getElementById("f-parc").value||"1",10));
+  if(nParc<=1 && fSit==="Realizado"){
     const _pr=document.getElementById("f-pago-val").value;
     const pago=(_pr==="")?valor:parseFloat(_pr);
     if(!isNaN(pago)&&pago<valor-0.005){
@@ -346,7 +354,6 @@ async function salvar(){
       abrirPmodal();return;
     } else if(_pr!=="" && !isNaN(pago)){ row.valor=Math.round(pago*100)/100; }
   }
-  const nParc=editId?1:Math.max(1,parseInt(document.getElementById("f-parc").value||"1",10));
   toast("salvando…");
   if(!editId && nParc>1){
     const total=valor, dEv=row.data_evento||hojeISO(), compM=(dEv||"").slice(0,7);
@@ -414,8 +421,9 @@ function recalcConc(){
   const st=document.getElementById("c-status");st.textContent=Math.abs(dif)<0.01?"✅ CONCILIADO":"⚠️ DIFERENÇA — revise";st.className="status "+(Math.abs(dif)<0.01?"ok":"dif");
 }
 function lancHTML(l,showMes){
-  const a=alerta(l),ic=l.tipo==="Entrada"?"⬆️":"⬇️";
-  const sub=[l.categoria,l.forma,l.situacao==="Previsto"?("vence "+fmt(l.venc)):("pago "+fmt(l.data_pag||l.data_evento))].filter(Boolean).join(" · ");
+  let a=alerta(l); if(l.regime==="competencia") a="cinza"; const ic=l.tipo==="Entrada"?"⬆️":"⬇️";
+  const _est=(l.regime==="competencia")?"competência (parcelado)":(l.situacao==="Previsto"?("vence "+fmt(l.venc)):("pago "+fmt(l.data_pag||l.data_evento)));
+  const sub=[l.categoria,l.forma,_est].filter(Boolean).join(" · ");
   const mt=showMes?`<span class="tagp">${String(l.data_evento||'').slice(5,7)}/${String(l.data_evento||'').slice(2,4)}</span>`:"";
   const vs=l.tipo==="Entrada"?"pos":"neg",sg=l.tipo==="Entrada"?"+":"−";
   return `<div class="lanc ${a}" onclick="abreForm('${l.id}')"><div class="ico">${ic}</div><div class="meta"><div class="d">${esc(l.descricao||"(sem descrição)")}${mt}</div><div class="s">${sub}</div></div><div class="vlr ${vs}">${sg}${BRL(+l.valor).replace('R$ ','')}</div></div>`;
@@ -462,6 +470,7 @@ function catChange(){
   if(!nome){ preencheSelects(); cat.selectedIndex=0; return; }
   saveCustomCat(fTipo,nome); preencheSelects(); cat.value=nome;
 }
+function parcChg(){var n=parseInt((document.getElementById("f-parc")||{}).value||"1",10);var rp=document.getElementById("row-pago");if(rp)rp.style.display=(n>1)?"none":((fSit==="Realizado")?"":"none");}
 function segSit(s){fSit=s;document.querySelectorAll("#f-sit button").forEach(b=>b.classList.toggle("on",b.dataset.s===s));var _rpg=document.getElementById("row-pago");if(_rpg)_rpg.style.display=(s==="Realizado")?"":"none";}
 function segTipo(t){fTipo=t;document.querySelectorAll("#f-tipo button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));preencheSelects();}
 function calcVenc(){document.getElementById("f-venc").value=calcVencimento(document.getElementById("f-data").value,document.getElementById("f-forma").value);}
@@ -704,6 +713,8 @@ function renderRel(){
     html+='<tr><td><b>'+y+'</b></td>'+cell(r,1)+cell(d)+'<td class="'+(res>=0?"pos":"neg")+'"><b>'+BRL(res)+'</b></td></tr>';});
   document.getElementById("rel-anual").innerHTML=html+'</table>';
   try{ renderRelExtras(L,inYr,compM,isComp,abert,val); }catch(e){ console.log('extras',e); }
+  window.__relForn={L:L,inYr:inYr,compM:compM,isComp:isComp,abert:abert,val:val};
+  try{ renderFornecedores(L,inYr,compM,isComp,abert,val); }catch(e){ console.log('forn',e); }
 }
 
 const HIST_SALDOS={"Banco do Brasil — Conta Corrente": 1865.0, "Banco do Brasil — Conta Salário": 673.44, "Bradesco — Conta Salário": 8017.82, "Mercado Pago — Conta Corrente": 0.27, "LeCard — Voucher": 228.96, "Dinheiro / Carteira": 34.9};
@@ -785,6 +796,27 @@ function mkChartH(id,labels,data,color){
     options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>BRL(c.parsed.x)}}},
       scales:{x:{ticks:{font:{size:9},callback:v=>"R$ "+(v/1000).toFixed(0)+"k"}},y:{ticks:{font:{size:10}}}}}});
 }
+function _nomeBase(s){return (s||"").replace(/\s*\(parc[^)]*\)\s*$/i,"").replace(/\s*\(compra[^)]*\)\s*$/i,"").replace(/\s*\(desconto[^)]*\)\s*$/i,"").replace(/\s*\(saldo\)\s*$/i,"").trim();}
+function renderFornecedores(L,inYr,compM,isComp,abert,val){
+  var desp={},rec={};
+  L.forEach(function(l){ if(!isComp(l)||abert(l))return; var m=compM(l); if(!inYr(m))return; var nome=_nomeBase(l.descricao)||"(sem nome)";
+    if(l.tipo==="Saída")desp[nome]=(desp[nome]||0)+val(l); else rec[nome]=(rec[nome]||0)+val(l); });
+  var q=(((document.getElementById("forn-q")||{}).value)||"").trim().toLowerCase();
+  function tabela(obj,pos){
+    var arr=Object.keys(obj).map(function(k){return [k,obj[k]];});
+    if(q)arr=arr.filter(function(x){return x[0].toLowerCase().indexOf(q)>=0;});
+    arr.sort(function(a,b){return b[1]-a[1];});
+    if(!arr.length)return '<div class="vazio">Nenhum nome no período.</div>';
+    var tot=arr.reduce(function(s,x){return s+x[1];},0);
+    var s='<div style="overflow-x:auto"><table class="rtab"><tr><th>Nome</th><th>Total</th><th>%</th></tr>';
+    arr.slice(0,100).forEach(function(x){var pct=tot?Math.round(x[1]/tot*100):0;s+='<tr><td>'+esc(x[0])+'</td><td class="'+(pos?"pos":"neg")+'">'+BRL(x[1])+'</td><td>'+pct+'%</td></tr>';});
+    s+='</table></div><div class="hint" style="margin-top:6px">Total: <b>'+BRL(tot)+'</b> · '+arr.length+' nome(s)</div>';
+    return s;
+  }
+  var fd=document.getElementById("tab-forn-desp");if(fd)fd.innerHTML=tabela(desp,false);
+  var fr=document.getElementById("tab-forn-rec");if(fr)fr.innerHTML=tabela(rec,true);
+}
+function fornFiltra(){var c=window.__relForn;if(c)renderFornecedores(c.L,c.inYr,c.compM,c.isComp,c.abert,c.val);}
 function renderRelExtras(L,inYr,compM,isComp,abert,val){
   const setT=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;};
   // Top 5 por categoria (competência, no período)
