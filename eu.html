@@ -180,7 +180,7 @@ setTimeout(function(){
       <div class="status" id="c-status">—</div>
     </div>
     <div class="hint">A conciliação compara o que você tem de fato nas contas com o que o sistema calculou dos lançamentos realizados.</div>
-    <div class="toolbar"><button onclick="exportar()">⬇︎ Backup (exportar)</button><button id="imp-btn" onclick="importarHistorico()" style="background:var(--azul);color:#fff;border-color:var(--azul)">⬆︎ Importar meu histórico</button></div>
+    <div class="toolbar"><button onclick="exportar()">⬇︎ Backup (exportar)</button><button onclick="abrirImportExtrato()" style="background:var(--azul);color:#fff;border-color:var(--azul)">📥 Importar extrato</button><button id="imp-btn" onclick="importarHistorico()" style="background:var(--azul);color:#fff;border-color:var(--azul)">⬆︎ Importar meu histórico</button></div>
   </section>
   <section class="view" id="v-rel">
     <div class="secttl">Relatórios</div>
@@ -238,6 +238,16 @@ setTimeout(function(){
     <button class="btn gho" onclick="document.getElementById('pmodal').classList.remove('on')">Voltar</button>
   </div>
 </div></div>
+<input type="file" id="ext-file" accept=".ofx,.csv,.txt,.xlsx,.xls,.OFX,.CSV,.XLSX" style="display:none" onchange="onFileExtrato(event)">
+<div class="modal" id="impmodal"><div class="sheet">
+  <h2>Importar extrato</h2>
+  <div id="imp-resumo" class="hint" style="margin-bottom:8px"></div>
+  <div id="imp-lista" style="max-height:48vh;overflow:auto;border:1px solid var(--linha);border-radius:10px"></div>
+  <div class="acts">
+    <button class="btn gho" onclick="document.getElementById('impmodal').classList.remove('on')">Cancelar</button>
+    <button class="btn prim" id="imp-ok" onclick="confirmImportExtrato()">Importar</button>
+  </div>
+</div></div>
 <div class="modal" id="modal"><div class="sheet">
   <h2 id="f-ttl">Novo lançamento</h2>
   <button id="btn-voz" onclick="falarLancamento()" style="width:100%;margin:2px 0 4px;padding:12px;border:none;border-radius:12px;background:#2E5090;color:#fff;font-size:15px;font-weight:700;cursor:pointer">🎤 Falar o lançamento</button>
@@ -254,6 +264,7 @@ setTimeout(function(){
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="var s=document.createElement('script');s.src='https://unpkg.com/@supabase/supabase-js@2';s.onload=function(){location.reload()};document.head.appendChild(s);"></script>
 <script>
 const SB_URL="https://jgcrflgumicitnsxxhpy.supabase.co";
@@ -339,6 +350,162 @@ async function loadAll(){
   const {data:c}=await sb.from("contas").select("*");
   db.contas={};(c||[]).forEach(x=>db.contas[x.nome]=x.saldo);
   render();
+}
+// ---------- IMPORTAR EXTRATO (OFX / CSV / XLSX) ----------
+var _extRows=[];
+function abrirImportExtrato(){ var f=document.getElementById("ext-file"); if(f){f.value="";f.click();} }
+function onFileExtrato(ev){
+  var file=ev.target.files&&ev.target.files[0]; if(!file)return;
+  var nome=(file.name||"").toLowerCase(); var rd=new FileReader();
+  rd.onerror=function(){ alert("Erro ao abrir o arquivo."); };
+  if(/\.(xlsx|xls)$/.test(nome)){
+    rd.onload=function(){ try{ montaPrevia(parseXLSX(rd.result)); }catch(e){ alert("Não consegui ler o Excel: "+e.message); } };
+    rd.readAsArrayBuffer(file);
+  }else{
+    rd.onload=function(){ try{ var t=String(rd.result||""); montaPrevia(/(<OFX|<STMTTRN)/i.test(t)?parseOFX(t):parseCSV(t)); }catch(e){ alert("Não consegui ler o arquivo: "+e.message); } };
+    rd.readAsText(file);
+  }
+}
+function _isoOFX(s){ s=(s||"").replace(/[^0-9]/g,""); if(s.length<8)return null; return s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8); }
+function parseOFX(txt){
+  var out=[]; var re=/<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi; var m;
+  function g(b,tag){ var mm=b.match(new RegExp("<"+tag+">([^<\\r\\n]*)","i")); return mm?mm[1].trim():""; }
+  while((m=re.exec(txt))){ var b=m[1];
+    var amt=parseFloat((g(b,"TRNAMT")||"0").replace(",",".")); if(isNaN(amt))continue;
+    var dt=_isoOFX(g(b,"DTPOSTED")); if(!dt)continue;
+    var desc=(g(b,"MEMO")||g(b,"NAME")||"Lançamento").replace(/\s+/g," ").trim();
+    out.push({data:dt, valor:Math.abs(Math.round(amt*100)/100), tipo:amt<0?"Saída":"Entrada", desc:desc});
+  }
+  return out;
+}
+function _dataBR(s){ s=(s||"").trim();
+  var m=s.match(/(\d{4})-(\d{2})-(\d{2})/); if(m)return m[1]+"-"+m[2]+"-"+m[3];
+  m=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/); if(m){var y=m[3].length===2?("20"+m[3]):m[3];return y+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");}
+  return null;
+}
+function _valorBR(s){ s=(s||"").replace(/[rR]\$/g,"").replace(/\s/g,""); if(!s)return null;
+  var neg=/-/.test(s)||/\(/.test(s); s=s.replace(/[()]/g,"");
+  if(s.indexOf(",")>=0&&s.indexOf(".")>=0){ s=s.replace(/\./g,"").replace(",","."); }
+  else if(s.indexOf(",")>=0){ s=s.replace(",","."); }
+  var v=parseFloat(s); if(isNaN(v))return null; return neg?-Math.abs(v):v;
+}
+function parseCSV(txt){
+  var out=[]; var lines=txt.split(/\r?\n/).filter(function(l){return l.trim();}); if(!lines.length)return out;
+  var sep=(lines[0].split(";").length>lines[0].split(",").length)?";":",";
+  var ci={data:-1,valor:-1,desc:-1}; var achou=false;
+  lines[0].toLowerCase().split(sep).forEach(function(h,idx){ h=h.trim();
+    if(/data|^dt/.test(h)&&ci.data<0){ci.data=idx;achou=true;}
+    if(/valor|montante|amount|quantia|cr[eé]dito|d[eé]bito/.test(h)&&ci.valor<0){ci.valor=idx;achou=true;}
+    if(/descri|hist[óo]rico|lan[çc]amento|detalhe|memo|t[íi]tulo/.test(h)&&ci.desc<0){ci.desc=idx;achou=true;}
+  });
+  var start=achou?1:0; if(!achou){ci={data:0,desc:1,valor:2};}
+  for(var i=start;i<lines.length;i++){ var c=lines[i].split(sep); if(c.length<2)continue;
+    var dt=_dataBR(c[ci.data]||""); if(!dt)continue;
+    var v=_valorBR(c[ci.valor]||""); if(v===null||isNaN(v))continue;
+    out.push({data:dt, valor:Math.abs(v), tipo:v<0?"Saída":"Entrada", desc:((c[ci.desc]||"Lançamento")).replace(/"/g,"").replace(/\s+/g," ").trim()});
+  }
+  return out;
+}
+function _fixMoji(s){ if(typeof s!=="string"||!/[ÃÂ]/.test(s))return s; try{return decodeURIComponent(escape(s));}catch(e){return s;} }
+function _normc(s){ try{return _fixMoji(String(s==null?"":s)).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().trim();}catch(e){return String(s==null?"":s).toLowerCase().trim();} }
+function _valExcel(c){
+  if(typeof c==="number") return c;
+  var s=String(c==null?"":c).trim(); if(!s)return null;
+  var neg=/-/.test(s); s=s.replace(/[^0-9.,]/g,"");
+  if(s.indexOf(",")>=0&&s.indexOf(".")>=0){ s=s.replace(/\./g,"").replace(",","."); }
+  else if(s.indexOf(",")>=0){ s=s.replace(",","."); }
+  var v=parseFloat(s); if(isNaN(v))return null; return neg?-Math.abs(v):Math.abs(v);
+}
+function _dataExcel(c){ if(c&&c.getFullYear){ return c.getFullYear()+"-"+String(c.getMonth()+1).padStart(2,"0")+"-"+String(c.getDate()).padStart(2,"0"); } return _dataBR(String(c==null?"":c)); }
+function _resolveCat(catRaw,desc,tipo){
+  var lista=(tipo==="Entrada"?CATS_REC:CATS_DES); var c=_normc(catRaw); var i;
+  if(c){
+    for(i=0;i<lista.length;i++){ if(_normc(lista[i])===c) return lista[i]; }
+    var MAP={"investimentos":"Investimento","comunicacao":"Internet","tarifas e impostos":"Despesas Bancárias","tarifas":"Despesas Bancárias","impostos":"Impostos","lazer e hobbies":"Lazer","educacao":"Educação","receitas":"Outras receitas","vestuario":"Vestuário","moradia":"Manutenção Casa"};
+    if(MAP[c] && lista.indexOf(MAP[c])>=0) return MAP[c];
+  }
+  var inf=inferCategoria(desc,desc,tipo); if(inf)return inf;
+  return null;
+}
+function _linhasDeAoa(aoa){
+  if(!aoa||!aoa.length)return [];
+  var hi=-1,H=null,i;
+  for(i=0;i<Math.min(aoa.length,12);i++){
+    var rr=(aoa[i]||[]).map(_normc);
+    var hasD=rr.some(function(x){return /descri|hist|lan[çc]amento/.test(x);});
+    var hasV=rr.some(function(x){return /valor|montante|value/.test(x);});
+    var hasData=rr.some(function(x){return x==="data"||/^data|date/.test(x);});
+    if(hasD&&hasV&&hasData){ hi=i; H=rr; break; }
+  }
+  if(hi<0)return [];
+  function col(test){ for(var k=0;k<H.length;k++){ if(test(H[k]))return k; } return -1; }
+  var cData=col(function(x){return x==="data"||/^data|date/.test(x);});
+  var cValor=col(function(x){return x==="valor"||/valor|montante|value/.test(x);});
+  var cDesc=col(function(x){return (/descri|hist|lan[çc]amento/.test(x))&&x.indexOf("complementar")<0;});
+  var cCompl=col(function(x){return x.indexOf("complementar")>=0;});
+  var cCat=col(function(x){return x==="categoria";});
+  var out=[];
+  for(var r=hi+1;r<aoa.length;r++){
+    var row=aoa[r]; if(!row||!row.length)continue;
+    var v=_valExcel(row[cValor]); if(v===null||Math.round(v*100)===0)continue;
+    var dt=_dataExcel(row[cData]); if(!dt)continue;
+    var desc=_fixMoji(String(cDesc>=0&&row[cDesc]!=null?row[cDesc]:"")).replace(/\s+/g," ").trim()||"Lançamento";
+    var compl=(cCompl>=0&&row[cCompl]!=null)?_fixMoji(String(row[cCompl])).replace(/\s+/g," ").trim():"";
+    if(compl && !/visa|master|elo|hipercard|cart[aã]o|^\d{3,4}$/i.test(compl) && _normc(compl)!==_normc(desc)){ desc=desc+" · "+compl; }
+    var catRaw=(cCat>=0&&row[cCat]!=null)?_fixMoji(String(row[cCat])):"";
+    var tipo=v<0?"Saída":"Entrada";
+    out.push({data:dt, valor:Math.abs(v), tipo:tipo, desc:desc, cat:_resolveCat(catRaw,desc,tipo)});
+  }
+  return out;
+}
+function parseXLSX(ab){
+  if(typeof XLSX==="undefined"){ alert("O leitor de Excel ainda está carregando. Espere 2 segundos e tente de novo (ou use OFX/CSV)."); return []; }
+  var wb=XLSX.read(new Uint8Array(ab),{type:"array",cellDates:true});
+  var ws=wb.Sheets[wb.SheetNames[0]];
+  var aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
+  return _linhasDeAoa(aoa);
+}
+function montaPrevia(rows){
+  if(!rows||!rows.length){ alert("Não encontrei lançamentos nesse arquivo.\n\nDica: exporte o extrato em OFX, CSV ou Excel (.xlsx) pelo app/site do banco."); return; }
+  var existe={}; (db.lanc||[]).forEach(function(l){ existe[(l.data_evento||"")+"|"+Math.round((+l.valor||0)*100)+"|"+l.tipo]=true; });
+  var vistos={};
+  _extRows=rows.map(function(r){
+    var key=r.data+"|"+Math.round(r.valor*100)+"|"+r.tipo;
+    var dup=!!(existe[key]||vistos[key]); vistos[key]=true;
+    var cat=r.cat||inferCategoria(r.desc,r.desc,r.tipo)||(r.tipo==="Entrada"?CATS_REC[0]:CATS_DES[0]);
+    return {data:r.data,valor:r.valor,tipo:r.tipo,desc:r.desc,cat:cat,dup:dup,sel:!dup};
+  });
+  renderImportPreview();
+  document.getElementById("impmodal").classList.add("on");
+}
+function processaExtrato(txt){ montaPrevia(/(<OFX|<STMTTRN)/i.test(txt)?parseOFX(txt):parseCSV(txt)); }
+function _impResumo(){
+  var novos=_extRows.filter(function(r){return r.sel;}).length;
+  var dups=_extRows.filter(function(r){return r.dup;}).length;
+  var e=document.getElementById("imp-resumo"); if(e)e.innerHTML="<b>"+_extRows.length+"</b> lançamentos no arquivo · <b>"+novos+"</b> selecionados · "+dups+" já existem (desmarcados).";
+  var ok=document.getElementById("imp-ok"); if(ok)ok.textContent="Importar ("+novos+")";
+}
+function renderImportPreview(){
+  var html="";
+  _extRows.forEach(function(r,i){
+    var sg=r.tipo==="Entrada"?"+":"−", cls=r.tipo==="Entrada"?"pos":"neg";
+    html+='<label style="display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--linha);font-size:13px'+(r.dup?';opacity:.55':'')+'">'
+      +'<input type="checkbox" '+(r.sel?"checked":"")+' onchange="_extRows['+i+'].sel=this.checked;_impResumo()" style="width:18px;flex:0 0 18px">'
+      +'<span style="flex:1;min-width:0"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.desc)+'</b><span style="color:var(--muted)">'+fmt(r.data)+' · '+esc(r.cat)+(r.dup?' · já existe':'')+'</span></span>'
+      +'<span class="'+cls+'" style="font-weight:700;white-space:nowrap">'+sg+BRL(r.valor).replace("R$ ","")+'</span></label>';
+  });
+  document.getElementById("imp-lista").innerHTML=html; _impResumo();
+}
+async function confirmImportExtrato(){
+  var sel=_extRows.filter(function(r){return r.sel;});
+  if(!sel.length){ alert("Nenhum lançamento selecionado."); return; }
+  var rows=sel.map(function(r){ return {user_id:USER.id, descricao:r.desc, valor:r.valor, tipo:r.tipo, situacao:"Realizado", categoria:r.cat, forma:"", data_evento:r.data, venc:null, data_pag:r.data, comp:r.data.slice(0,7), regime:"ambos"}; });
+  toast("importando…");
+  for(var i=0;i<rows.length;i+=300){ var res=await sb.from("lancamentos").insert(rows.slice(i,i+300)); if(res.error){ alert("Erro ao importar: "+res.error.message); return; } }
+  document.getElementById("impmodal").classList.remove("on");
+  if(rows.length){ mesAtual=new Date(rows[rows.length-1].data_evento+"T00:00:00"); mesAtual.setDate(1); }
+  await loadAll();
+  alert("Importação concluída: "+rows.length+" lançamento(s) adicionados.");
 }
 // ---------- LANÇAMENTO POR VOZ ----------
 var _rec=null;
